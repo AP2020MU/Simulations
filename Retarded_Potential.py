@@ -1,5 +1,5 @@
-# 電磁場のFDTD法によるシミュレート
-# 参考資料
+# 遅延ポテンシャルのシミュレート
+# 参考資料(FDTD法)
 # https://qiita.com/sandshiP/items/2b8b10265d0c11597081
 # https://github.com/sandship/practice_fdtd/tree/master/imp
 # http://www.emlab.cei.uec.ac.jp/denjikai/fself.dtd.pdf
@@ -13,6 +13,7 @@ from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from itertools import product
 
 c = 2.99792458e8 # 光速[m/s]
 eps0 = 8.8541878128e-12 # 真空の誘電率[F/m]
@@ -24,7 +25,8 @@ dx = 0.01
 dy = 0.01
 dz = 0.01
 dt = 0.99/(c * np.sqrt((1.0/dx ** 2 + 1.0/dy ** 2 + 1.0/dz ** 2))) # 時間差分間隔[s] Courantの安定条件を満たす
-print(dt)
+print("dt=",dt)
+
 ctx = (c*dt/dx)**2 #constant
 cty = (c*dt/dy)**2 #constant
 ctz = (c*dt/dz)**2 #constant
@@ -36,14 +38,13 @@ nz = 100
 nt = 200
 
 
-
-#mesh
 x = np.array([i*dx for i in range(nx)])
 y = np.array([i*dy for i in range(ny)])
 X, Y = np.meshgrid(x,y)
 
-#solution
+# ポテンシャル
 u = np.zeros((nt,nx,ny,nz))
+# 電荷密度
 rho = np.zeros((nt,nx,ny,nz))
 Q = 1 # 電荷[C]
 # 点電荷を扱うと必然的に無限大の発散が出てきてしまうためナイーブな実装では壊れる
@@ -52,7 +53,7 @@ Q = 1 # 電荷[C]
 # 点電荷近傍では真のポテンシャル/電場を再現しない可能性があることに留意
 
 #rho[:,nx//2,ny//2,nz//2] = Q/(dx*dy*dz) # 電荷密度[C/m^3]
-from itertools import product
+
 """
 # 静止した点電荷
 for i,j,k in product([0,1],repeat=3):
@@ -84,7 +85,7 @@ for n in range(nt):
 
 #rho[:,nx//2,ny//2,nz//2] = 5.0e-6*Q/eps0
 
-#initial data
+# ポテンシャルの初期状態
 #u_0 = np.exp(-((X-2)**2)*10)*np.exp(-((Y-2)**2)*10)*2
 u_0 = np.zeros((nx,ny,nz))
 u_1 = np.zeros((nx,ny,nz))
@@ -95,20 +96,16 @@ u_1 = np.zeros((nx,ny,nz))
 u[0] = u_0
 u[1] = u[0] + dt * u_1
 
-#simulation
+
 for t in tqdm(range(1,nt-1)):
-    """
-    for x in range(1,nx-1):
-        for y in range(1,ny-1):
-            u[t+1,x,y] = 2*(1-2*rsq)*u[t,x,y]-u[t-1,x,y]+rsq*(u[t,x-1,y]+u[t,x+1,y]+u[t,x,y-1]+u[t,x,y+1])
-    """
+    # ポテンシャルの更新
     u[t+1] = 2*(1-ctx-cty-ctz)*u[t] - u[t-1] \
             + ctx*(np.roll(u[t],shift=1,axis=0) + np.roll(u[t],shift=-1,axis=0)) \
             + cty*(np.roll(u[t],shift=1,axis=1) + np.roll(u[t],shift=-1,axis=1)) \
             + ctz*(np.roll(u[t],shift=1,axis=2) + np.roll(u[t],shift=-1,axis=2)) \
             + cte*rho[t]
     
-    #Neumann condition
+    # Neumann条件
     u[t+1,0,:,:] = u[t+1,1,:,:]
     u[t+1,:,0,:] = u[t+1,:,1,:]
     u[t+1,:,:,0] = u[t+1,:,:,1]
@@ -122,7 +119,7 @@ for t in tqdm(range(1,nt-1)):
     u[t,nx-1,ny-1] = (u[t,nx-2,ny-1]+u[t,nx-1,ny-2])/2
     """
 
-
+# 解析解におけるポテンシャル
 real_phi = np.zeros((nx,ny,nz))
 dr = np.sqrt(dx**2+dy**2+dz**2)
 for i in range(nx):
@@ -135,10 +132,13 @@ for i in range(nx):
                 real_phi[i,j,k] = u[10,nx//2,ny//2,nz//2]
             else:
                 real_phi[i,j,k] = Q/(4*np.pi*eps0*dr*np.sqrt((i-nx//2)**2 + (j-ny//2)**2 + (k-nz//2)**2))
+
             """
+# 電場
 Ex = np.zeros((nt,nx,ny,nz))
 Ey = np.zeros((nt,nx,ny,nz))
 Ez = np.zeros((nt,nx,ny,nz))
+# 解析解における電場
 real_Ex = np.zeros((nx,ny,nz))
 for t in tqdm(range(1,nt-1)):
     Ex[t] = (u[t]-np.roll(u[t],shift=1,axis=0))/dx
@@ -146,13 +146,9 @@ for t in tqdm(range(1,nt-1)):
     Ez[t] = (u[t]-np.roll(u[t],shift=1,axis=2))/dz
 
 real_Ex = (real_phi-np.roll(real_phi,shift=1,axis=0))/dx
-"""
-aaa = 0
-for t in range(1,nt-1):
-    aaa = np.average(Ex[t]-real_Ex)
 
-print(aaa/(nt-2))
-"""
+
+# 描画
 fig = plt.figure()
 fig.set_dpi(100)
 ax = fig.gca(projection='3d')
